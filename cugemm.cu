@@ -2,6 +2,29 @@
 //   1) which GPU you used and
 //   2) what performance improvement you obtained over previous homework(s)
 
+/*
+- I used
+    - NVIDIA GeForce GTX 1060 6GB,
+    - NVIDIA-SMI 550.144.03
+    - Driver Version: 550.144.03
+    - CUDA Version: 12.4
+  Since I have an ancient GPU, I had to lower the compute capability to 6.1 in `Makefile` according
+  to (https://developer.nvidia.com/cuda-legacy-gpus).
+
+- For coalesced memory access, I used shared memory to load tiles of A and B matrices of size 32,
+  corresponding to the thread dimensions of (32, 32). Each thread computes one element of the output
+  matrix C.
+
+    | Algorithm     | Size | Reps      | Time (s) | GFLOPS  |
+    |-------------- |------|-----------|----------|---------|
+    | basic         | 1024 | 15        | 0.060553 | 35.46   |
+    | gmem_coalesced| 1024 | 15        | 0.004262 | 503.81  |
+    | basic         | 2048 | 15        | 0.480858 | 35.73   |
+    | gmem_coalesced| 2048 | 15        | 0.030104 | 570.69  |
+    | basic         | 4096 | 15        | 3.912514 | 35.13   |
+    | gmem_coalesced| 4096 | 15        | 0.224432 | 612.39  |
+*/
+
 #include <cublas_v2.h>
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
@@ -308,10 +331,55 @@ __global__ void runBasic(int M, int N, int K, float alpha, float *A, float *B, f
     }
 }
 
+const int TILE_DIM = 32;
+
 __global__ void runGmemCoalesced(int M, int N, int K, float alpha, float *A, float *B, float beta,
                                  float *C) {
     // HW1 TODO: copy runBasic() code here and update to avoid uncoalesced accesses to global
     // memory. Note, you are also free to change the grid dimensions in the kernel launch below.
+
+    // M=N=K=2048, gridDim=(64,64), blockDim=(32,32)
+    // (1,1) block, (2,2) thread,
+
+    // blockIndex.x ∈ [0, 63], threadIndex.x ∈ [0, 31]
+    // blockIndex.y ∈ [0, 63], threadIndex.y ∈ [0, 31]
+
+    const int row = blockIdx.y * TILE_DIM + threadIdx.y;  // 1 * 32 + 2 = 34
+    const int col = blockIdx.x * TILE_DIM + threadIdx.x;  // 1 * 32 + 2 = 34
+
+    __shared__ float tileA[TILE_DIM][TILE_DIM];      // 32 * 32
+    __shared__ float tileB[TILE_DIM][TILE_DIM + 1];  // 32 * 33
+
+    float acc = 0.0;
+    for (int t = 0; t < (K + TILE_DIM - 1) / TILE_DIM; ++t) {  // t < (2048 + 32 - 1 ) / 32 ~= 64
+        int aCol = t * TILE_DIM + threadIdx.x;  // [1st] 0 * 32 + 2 = 2;  [2nd] 1 * 32 + 2 = 34
+        int bRow = t * TILE_DIM + threadIdx.y;  // [1st] 0 * 32 + 2 = 2;  [2nd] 1 * 32 + 2 = 34
+
+        if (row < M && aCol < K) {
+            tileA[threadIdx.y][threadIdx.x] = A[row * K + aCol];  // [1st] tileA[2][2] = A[34][2]
+                                                                  // [2nd] tileA[2][2] = A[34][34]
+                                                                  // [...] tileA[2][2] = A[34][31]
+        }
+
+        if (bRow < K && col < N) {
+            tileB[threadIdx.y][threadIdx.x] = B[bRow * N + col];  // [1st] tileB[2][2] = B[2][34]
+                                                                  // [2nd] tileB[2][2] = B[34][34]
+                                                                  // [...] tileB[2][2] = B[31][34]
+        }
+
+        __syncthreads();
+
+        for (int k = 0; k < TILE_DIM; ++k) {
+            acc += tileA[threadIdx.y][k] * tileB[k][threadIdx.x];
+        }
+
+        __syncthreads();
+    }
+
+    if (row < M && col < N) {
+        const int idx = row * N + col;
+        C[idx] = alpha * acc + beta * C[idx];
+    }
 }
 
 const uint F = 32;
