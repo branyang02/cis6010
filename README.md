@@ -95,3 +95,17 @@ Cache tiles of the input matrices into shared memory, to avoid redundant loads t
 ## HW3: Multiple results per thread
 
 Have each thread compute multiple cells of the output matrix C, instead of just one. This improves arithmetic intensity and should lift performance further to about ~3 TFLOPS. For reference, cuBLAS was reaching about 7.1 TFLOPS on my instance (with the T4's hardware limit being 8.1 TFLOPS), so we're over 40% of that optimal performance - not too shabby!
+
+## HW4: Pipeline Memory Copies and Kernel Computation
+
+Buliding on your unmodified `runSharedMemMultiOutput` kernel from HW3, use CUDA streams to overlap memory copies with kernel execution. The numbers in the timeline below indicate the order of key operations.
+
+* Copy the `B` matrix in its entirety to the device (1), since all of the output elements depend on all of the rows of `B`.
+* In a stream `S0`, transfer the first slice of rows of the `A` (2) and `C` (3) matrices using `cudaMemcpyAsync`, then launch a kernel to compute those rows of `C` and to finally copy the rows of `C` back to the host (6).
+* Meanwhile, in another stream `S1`, transfer the next slice of rows of `A` (4) and `C` (5), launch a kernel to compute those rows of `C` and to copy them back to the host (7).
+
+The number of streams to use is a runtime argument, determined by the `--streams` flag. The rows of `A` and `C` should be split evenly across all available streams.
+
+Using streams, you will overlap transfer of the `A` and `C` matrices with the matmul kernel. For reference, on a GTX Titan X GPU I was seeing about a 15% performance improvement with 8 streams compared to a fully-synchronous single-stream version.
+
+![](hw4-timeline.png)
