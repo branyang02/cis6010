@@ -3,6 +3,8 @@
 //   2) what performance improvement you obtained over previous homework(s)
 
 /*
+HW1:
+
 - I used
     - NVIDIA GeForce GTX 1060 6GB,
     - NVIDIA-SMI 550.144.03
@@ -23,6 +25,37 @@
     | gmem_coalesced| 2048 | 15        | 0.030104 | 570.69  |
     | basic         | 4096 | 15        | 3.912514 | 35.13   |
     | gmem_coalesced| 4096 | 15        | 0.224432 | 612.39  |
+*/
+
+/*
+HW2
+
+- OOPS, I did not see that homework 2 is shared memory!!! I looked through my code for HW1 it does
+  exactly what HW2 is asked to do. I also could not find any optimizations in terms of using shared
+  memory, so I had to just copy the code over from HW1.
+
+- But I don't want this homework to not take anything so here are the experiments. Everything
+  is done with size = 4096 and reps = 10. In addition, I changed the kernel launch config to
+
+    dim3 gridDim(ROUND_UP_TO_NEAREST(M, F), ROUND_UP_TO_NEAREST(N, F));
+    dim3 blockDim(F, F);
+
+  so the kernel code would work with the following values of F:
+
+    |  F  |   Time (s)  |  GFLOPS  |
+    |-----|-------------|----------|
+    |  1  |  too long   |   DNF    |
+    |  2  |  10.133260  |  13.56   |
+    |  4  |   1.478625  |  92.95   |
+    |  8  |   0.412828  | 332.92   |
+    | 16  |   0.262793  | 522.99   |
+    | 32  |   0.224275  | 612.82   |
+
+  As F grows, each thread block reuses more of A and B from shared memory before going back to
+  global memory. This boosts speed but we see a sharp increase in GFLOPS. It seems like 32 is
+  the optimal in this case as we are limited by the max 1024 threads in a block. We could try
+  instead of computing 1x1 oupts per thread, we could do F/32 x F/32 per thread for F > 32.
+
 */
 
 #include <cublas_v2.h>
@@ -395,7 +428,30 @@ __global__ void runSharedMem(int M, int N, int K, float alpha, float *A, float *
     // different values of F to see how it affects performance.
 
     __shared__ float SA[F][F];
-    __shared__ float SB[F][F];
+    __shared__ float SB[F][F + 1];
+
+    const int row = blockIdx.y * F + threadIdx.y;
+    const int col = blockIdx.x * F + threadIdx.x;
+
+    float acc = 0.0;
+    for (int t = 0; t < (K + F - 1) / F; ++t) {
+        int aCol = t * F + threadIdx.x;
+        int bRow = t * F + threadIdx.y;
+
+        if (row < M && aCol < K) SA[threadIdx.y][threadIdx.x] = A[row * K + aCol];
+        if (bRow < K && col < N) SB[threadIdx.y][threadIdx.x] = B[bRow * N + col];
+
+        __syncthreads();
+        for (int k = 0; k < F; ++k) {
+            acc += SA[threadIdx.y][k] * SB[k][threadIdx.x];
+        }
+        __syncthreads();
+    }
+
+    if (row < M && col < N) {
+        const int idx = row * N + col;
+        C[idx] = alpha * acc + beta * C[idx];
+    }
 }
 
 const uint G = 4;
@@ -438,8 +494,8 @@ void runAlgo(Algo algo, cublasHandle_t handle, int M, int N, int K, float alpha,
             assert(0 == N % F);
             assert(0 == K % F);
             // TODO: update your grid here
-            dim3 gridDim(ROUND_UP_TO_NEAREST(M, 32), ROUND_UP_TO_NEAREST(N, 32));
-            dim3 blockDim(32, 32);
+            dim3 gridDim(ROUND_UP_TO_NEAREST(M, F), ROUND_UP_TO_NEAREST(N, F));
+            dim3 blockDim(F, F);
             runSharedMem<<<gridDim, blockDim>>>(M, N, K, alpha, A, B, beta, C);
             break;
         }
