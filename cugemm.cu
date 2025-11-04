@@ -71,6 +71,7 @@ HW2
 #include <random>
 
 // from https://github.com/jarro2783/cxxopts
+
 #include "cxxopts.hpp"
 
 #define cudaCheck(err) (cudaErrorCheck(err, __FILE__, __LINE__))
@@ -79,7 +80,7 @@ HW2
 
 enum Algo { cublas = 0, basic, gmem_coalesced, smem, smem_multioutput, numAlgos };
 
-const char *algo2str(Algo a) {
+const char* algo2str(Algo a) {
     switch (a) {
         case cublas:
             return "cublas";
@@ -96,16 +97,16 @@ const char *algo2str(Algo a) {
     }
 }
 
-void cudaErrorCheck(cudaError_t error, const char *file, int line);
-void cublasErrorCheck(cublasStatus_t status, const char *file, int line);
-void randomize_matrix(float *mat, int N);
-void const_init_matrix(float *mat, int N, float F);
-bool verify_matrix(float *expected, float *actual, int M, int N);
-void print_matrix(const float *A, int M, int N, std::ostream &outs);
-void runAlgo(Algo algo, cublasHandle_t handle, int M, int N, int K, float alpha, float *A, float *B,
-             float beta, float *C);
-void runCublas(cublasHandle_t handle, int M, int N, int K, float alpha, float *A, float *B,
-               float beta, float *C);
+void cudaErrorCheck(cudaError_t error, const char* file, int line);
+void cublasErrorCheck(cublasStatus_t status, const char* file, int line);
+void randomize_matrix(float* mat, int N);
+void const_init_matrix(float* mat, int N, float F);
+bool verify_matrix(float* expected, float* actual, int M, int N);
+void print_matrix(const float* A, int M, int N, std::ostream& outs);
+void runAlgo(Algo algo, cublasHandle_t handle, int M, int N, int K, float alpha, float* A, float* B,
+             float beta, float* C);
+void runCublas(cublasHandle_t handle, int M, int N, int K, float alpha, float* A, float* B,
+               float beta, float* C);
 
 const std::string errLogFile = "gemmValidationFailure.txt";
 
@@ -113,7 +114,7 @@ const std::string errLogFile = "gemmValidationFailure.txt";
 std::default_random_engine generator(2);
 std::uniform_real_distribution<float> distribution(0, 1);
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
     // command-line flags
     cxxopts::Options options("gemm.cu", "CUDA GEMM kernels");
     options.add_options()("size", "matrix size (N x N)",
@@ -171,10 +172,10 @@ int main(int argc, char **argv) {
     float *A = nullptr, *B = nullptr, *C = nullptr, *C_ref = nullptr;      // host matrices
     float *dA = nullptr, *dB = nullptr, *dC = nullptr, *dC_ref = nullptr;  // device matrices
 
-    A = (float *)malloc(sizeof(float) * SIZE * SIZE);
-    B = (float *)malloc(sizeof(float) * SIZE * SIZE);
-    C = (float *)malloc(sizeof(float) * SIZE * SIZE);
-    C_ref = (float *)malloc(sizeof(float) * SIZE * SIZE);
+    A = (float*)malloc(sizeof(float) * SIZE * SIZE);
+    B = (float*)malloc(sizeof(float) * SIZE * SIZE);
+    C = (float*)malloc(sizeof(float) * SIZE * SIZE);
+    C_ref = (float*)malloc(sizeof(float) * SIZE * SIZE);
 
     randomize_matrix(A, SIZE * SIZE);
     randomize_matrix(B, SIZE * SIZE);
@@ -185,10 +186,10 @@ int main(int argc, char **argv) {
     // print_matrix(B, SIZE, SIZE, std::cout);
     // print_matrix(C, SIZE, SIZE, std::cout);
 
-    cudaCheck(cudaMalloc((void **)&dA, sizeof(float) * SIZE * SIZE));
-    cudaCheck(cudaMalloc((void **)&dB, sizeof(float) * SIZE * SIZE));
-    cudaCheck(cudaMalloc((void **)&dC, sizeof(float) * SIZE * SIZE));
-    cudaCheck(cudaMalloc((void **)&dC_ref, sizeof(float) * SIZE * SIZE));
+    cudaCheck(cudaMalloc((void**)&dA, sizeof(float) * SIZE * SIZE));
+    cudaCheck(cudaMalloc((void**)&dB, sizeof(float) * SIZE * SIZE));
+    cudaCheck(cudaMalloc((void**)&dC, sizeof(float) * SIZE * SIZE));
+    cudaCheck(cudaMalloc((void**)&dC_ref, sizeof(float) * SIZE * SIZE));
 
     cudaCheck(cudaMemcpy(dA, A, sizeof(float) * SIZE * SIZE, cudaMemcpyHostToDevice));
     cudaCheck(cudaMemcpy(dB, B, sizeof(float) * SIZE * SIZE, cudaMemcpyHostToDevice));
@@ -271,7 +272,7 @@ int main(int argc, char **argv) {
 }
 
 /** Function to check for errors in CUDA API calls */
-void cudaErrorCheck(cudaError_t error, const char *file, int line) {
+void cudaErrorCheck(cudaError_t error, const char* file, int line) {
     if (error != cudaSuccess) {
         printf("[CUDA ERROR] at file %s:%d:\n%s: %s\n", file, line, cudaGetErrorName(error),
                cudaGetErrorString(error));
@@ -279,7 +280,7 @@ void cudaErrorCheck(cudaError_t error, const char *file, int line) {
     }
 };
 
-void cublasErrorCheck(cublasStatus_t status, const char *file, int line) {
+void cublasErrorCheck(cublasStatus_t status, const char* file, int line) {
     if (status != CUBLAS_STATUS_SUCCESS) {
         printf("[CUDA ERROR] at file %s:%d:\n %s: %s\n", file, line, cublasGetStatusName(status),
                cublasGetStatusString(status));
@@ -289,20 +290,20 @@ void cublasErrorCheck(cublasStatus_t status, const char *file, int line) {
 
 /** Initialize the given matrix `mat` which has `N` contiguous values. Contents of `mat` are set to
  * random values. */
-void randomize_matrix(float *mat, int N) {
+void randomize_matrix(float* mat, int N) {
     for (int i = 0; i < N; i++) {
         mat[i] = distribution(generator);
     }
 }
 
-void const_init_matrix(float *mat, int N, float F) {
+void const_init_matrix(float* mat, int N, float F) {
     for (int i = 0; i < N; i++) {
         mat[i] = F;
     }
 }
 
 /** Print the given MxN matrix `mat` to the provided output stream. */
-void print_matrix(const float *A, int M, int N, std::ostream &outs) {
+void print_matrix(const float* A, int M, int N, std::ostream& outs) {
     outs << "[";
     for (int i = 0; i < M * N; i++) {
         if ((i + 1) % N == 0) {
@@ -317,7 +318,7 @@ void print_matrix(const float *A, int M, int N, std::ostream &outs) {
     outs << "]" << std::endl << std::endl;
 }
 
-bool verify_matrix(float *expected, float *actual, int M, int N) {
+bool verify_matrix(float* expected, float* actual, int M, int N) {
     for (int i = 0; i < N; i++) {
         for (int j = 0; j < M; j++) {
             float fexp = (expected[(i * N) + j]);
@@ -333,8 +334,8 @@ bool verify_matrix(float *expected, float *actual, int M, int N) {
     return true;
 }
 
-void runCublas(cublasHandle_t handle, int M, int N, int K, float alpha, float *A, float *B,
-               float beta, float *C) {
+void runCublas(cublasHandle_t handle, int M, int N, int K, float alpha, float* A, float* B,
+               float beta, float* C) {
     // cuBLAS uses *column-major* order. So we change the order of our row-major A &
     // B, since (B^T*A^T)^T = (A*B)
     // cublasStatus_t ok = cublasGemmEx(handle, CUBLAS_OP_N, CUBLAS_OP_N, N, M, K, &alpha, B,
@@ -347,8 +348,8 @@ void runCublas(cublasHandle_t handle, int M, int N, int K, float alpha, float *A
     cublasCheck(ok);
 }
 
-__global__ void runBasic(int M, int N, int K, float alpha, float *A, float *B, float beta,
-                         float *C) {
+__global__ void runBasic(int M, int N, int K, float alpha, float* A, float* B, float beta,
+                         float* C) {
     const unsigned x = blockIdx.x * blockDim.x + threadIdx.x;
     const unsigned y = blockIdx.y * blockDim.y + threadIdx.y;
 
@@ -366,8 +367,8 @@ __global__ void runBasic(int M, int N, int K, float alpha, float *A, float *B, f
 
 const int TILE_DIM = 32;
 
-__global__ void runGmemCoalesced(int M, int N, int K, float alpha, float *A, float *B, float beta,
-                                 float *C) {
+__global__ void runGmemCoalesced(int M, int N, int K, float alpha, float* A, float* B, float beta,
+                                 float* C) {
     // HW1 TODO: copy runBasic() code here and update to avoid uncoalesced accesses to global
     // memory. Note, you are also free to change the grid dimensions in the kernel launch below.
 
@@ -417,8 +418,8 @@ __global__ void runGmemCoalesced(int M, int N, int K, float alpha, float *A, flo
 
 const uint F = 32;
 
-__global__ void runSharedMem(int M, int N, int K, float alpha, float *A, float *B, float beta,
-                             float *C) {
+__global__ void runSharedMem(int M, int N, int K, float alpha, float* A, float* B, float beta,
+                             float* C) {
     // HW2 TODO: Use shared memory to cache square FxF tiles of the A and B matrices in shared
     // memory (SA and SB, respectively, provided below). Each thread should compute the result for
     // one cell of the output matrix C.
@@ -456,8 +457,8 @@ __global__ void runSharedMem(int M, int N, int K, float alpha, float *A, float *
 
 const uint G = 4;
 
-__global__ void runSharedMemMultiOutput(int M, int N, int K, float alpha, float *A, float *B,
-                                        float beta, float *C) {
+__global__ void runSharedMemMultiOutput(int M, int N, int K, float alpha, float* A, float* B,
+                                        float beta, float* C) {
     // HW3 TODO: Copy your runSharedMem() code here and update it so that each thread computes the
     // result for GxG cells of the output matrix C. Each thread should accumulate temporary results
     // in the local LC matrix, provided below, before writing them to C in global memory.
@@ -471,8 +472,8 @@ __global__ void runSharedMemMultiOutput(int M, int N, int K, float alpha, float 
     float LC[G][G] = {0.0};
 }
 
-void runAlgo(Algo algo, cublasHandle_t handle, int M, int N, int K, float alpha, float *A, float *B,
-             float beta, float *C) {
+void runAlgo(Algo algo, cublasHandle_t handle, int M, int N, int K, float alpha, float* A, float* B,
+             float beta, float* C) {
     switch (algo) {
         case cublas:
             runCublas(handle, M, N, K, alpha, A, B, beta, C);
