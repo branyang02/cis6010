@@ -58,6 +58,44 @@ HW2
 
 */
 
+/*
+HW3
+
+- Each thread now computes G×G output elements (where G=4, so 16 elements per thread) instead 
+  of just 1 element. This improves arithmetic intensity by reusing loaded tiles for multiple output 
+  computations.
+
+- Implementation details:
+  - Tile size F = 32 (same as HW2)
+  - Each thread computes G×G = 4×4 = 16 output elements
+  - Block size reduced from (32,32) to (F/G, F/G) = (8,8) = 64 threads
+  - Each block still computes F×F = 32×32 outputs
+  - Local accumulator array LC[G][G] stores partial results per thread
+
+- Performance comparison (with size = 4096, varying reps = 25):
+
+    | Algorithm            | Size | Reps | Time (s) | GFLOPS  | Speedup vs HW2 |
+    |----------------------|------|------|----------|---------|----------------|
+    | sharedmem (HW2)      | 1024 | 25   | 0.003627 |  594.83 |     -----      |
+    | sharedmem_multioutput| 1024 | 25   | 0.001954 | 1098.87 |     1.86x      |
+    | sharedmem (HW2)      | 2048 | 25   | 0.028561 |  601.51 |     -----      |
+    | sharedmem_multioutput| 2048 | 25   | 0.013677 | 1256.07 |     2.09x      |
+    | sharedmem (HW2)      | 4096 | 25   | 0.232698 |  590.63 |     -----      |
+    | sharedmem_multioutput| 4096 | 25   | 0.109373 | 1256.61 |     2.13x      |
+    | sharedmem (HW2)      | 8192 | 5    | 1.857799 |  591.84 |     -----      |
+    | sharedmem_multioutput| 8192 | 5    | 0.881375 | 1247.50 |     2.10x      |
+    | cuBLAS (reference)   | 8192 | 5    | 0.325244 | 3380.57 |     5.71x      | <-- crazy :((
+
+- Achieved ~2x speedup over HW2.
+- The multi-output strategy effectively doubles throughput.
+- cuBLAS only reaches to 3 TFLOPS on my machine so I think it is reasonable that my solution
+  reaches 1 TFLOPS (compared with devietti T4 machine: CuBLAS: 7.1 TFLOPS vs multi_output: 3 TFLOPS)
+
+
+Note for submitting late: 
+- Things got quite busy but completely on me!!
+*/
+
 #include <cublas_v2.h>
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
@@ -470,6 +508,64 @@ __global__ void runSharedMemMultiOutput(int M, int N, int K, float alpha, float*
     __shared__ float SB[F][F];
 
     float LC[G][G] = {0.0};
+
+    // Each thread computes G×G output elements
+    // Thread block size is (F/G, F/G), each block computes F×F outputs
+    const int baseRow = blockIdx.y * F + threadIdx.y * G;
+    const int baseCol = blockIdx.x * F + threadIdx.x * G;
+
+    for (int t = 0; t < (K + F - 1) / F; ++t) {
+        // Load F×F tile of A and B into shared memory
+        // Each thread loads G×G elements to fully populate the shared memory tile
+        for (int gy = 0; gy < G; ++gy) {
+            for (int gx = 0; gx < G; ++gx) {
+                int row = baseRow + gy;
+                int col = baseCol + gx;
+                int sRow = threadIdx.y * G + gy;
+                int sCol = threadIdx.x * G + gx;
+
+                // Load tile of A
+                int aCol = t * F + sCol;
+                if (row < M && aCol < K) {
+                    SA[sRow][sCol] = A[row * K + aCol];
+                } else {
+                    SA[sRow][sCol] = 0.0;
+                }
+
+                // Load tile of B
+                int bRow = t * F + sRow;
+                if (bRow < K && col < N) {
+                    SB[sRow][sCol] = B[bRow * N + col];
+                } else {
+                    SB[sRow][sCol] = 0.0;
+                }
+            }
+        }
+
+        __syncthreads();
+
+        // Compute partial results
+        for (int k = 0; k < F; ++k) {
+            for (int gy = 0; gy < G; ++gy) {
+                for (int gx = 0; gx < G; ++gx) {
+                    LC[gy][gx] += SA[threadIdx.y * G + gy][k] * SB[k][threadIdx.x * G + gx];
+                }
+            }
+        }
+        __syncthreads();
+    }
+
+    // Global memory
+    for (int gy = 0; gy < G; ++gy) {
+        for (int gx = 0; gx < G; ++gx) {
+            int row = baseRow + gy;
+            int col = baseCol + gx;
+            if (row < M && col < N) {
+                const int idx = row * N + col;
+                C[idx] = alpha * LC[gy][gx] + beta * C[idx];
+            }
+        }
+    }
 }
 
 void runAlgo(Algo algo, cublasHandle_t handle, int M, int N, int K, float alpha, float* A, float* B,
@@ -506,9 +602,8 @@ void runAlgo(Algo algo, cublasHandle_t handle, int M, int N, int K, float alpha,
             assert(0 == K % F);
             assert(0 == F % G);
             assert((F * F) / (G * G) >= F);
-            // TODO: update your grid here
-            dim3 gridDim(ROUND_UP_TO_NEAREST(M, 32), ROUND_UP_TO_NEAREST(N, 32));
-            dim3 blockDim(32, 32);
+            dim3 gridDim(ROUND_UP_TO_NEAREST(M, F), ROUND_UP_TO_NEAREST(N, F));
+            dim3 blockDim(F / G, F / G);
             runSharedMemMultiOutput<<<gridDim, blockDim>>>(M, N, K, alpha, A, B, beta, C);
             break;
         }
