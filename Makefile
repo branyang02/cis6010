@@ -1,7 +1,7 @@
 all: cugemm.bin cugemm-debug.bin cugemm-profile.bin
 
-SOURCE_FILE=cugemm.cu
-# SOURCE_FILE=cugemm-hw4.cu
+# SOURCE_FILE=cugemm.cu
+SOURCE_FILE=cugemm-hw4.cu
 
 # optimized binary
 cugemm.bin: $(SOURCE_FILE)
